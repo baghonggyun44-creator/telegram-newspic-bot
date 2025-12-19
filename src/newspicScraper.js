@@ -1,5 +1,5 @@
 import axios from "axios";
-import cheerio from "cheerio";
+import * as cheerio from "cheerio";
 
 export async function scrapeHotNews() {
   try {
@@ -15,7 +15,6 @@ export async function scrapeHotNews() {
     const $ = cheerio.load(res.data);
     const articles = [];
 
-    // 🔥 가장 안정적인 카드 단위 기준
     $("a[href*='view.html']").each((_, el) => {
       const href = $(el).attr("href");
       const title = $(el).text().trim();
@@ -30,12 +29,16 @@ export async function scrapeHotNews() {
       const idMatch = url.match(/nid=\d+/);
       const id = idMatch ? idMatch[0] : url;
 
-      articles.push({ id, title, url });
+      articles.push({
+        id,
+        title,
+        url,
+      });
     });
 
-    console.log("🧪 스크래핑 결과 샘플:", articles.slice(0, 3));
+    console.log("🧪 스크래핑 결과:", articles.length);
 
-    return articles;
+    return articles.slice(0, 5); // 🔥 최대 5개만
   } catch (err) {
     console.error("❌ 뉴스픽 스크래핑 실패:", err.message);
     return [];
