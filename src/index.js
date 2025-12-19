@@ -1,99 +1,108 @@
-/**
- * index.js (FINAL STABLE)
- * - 뉴스픽 핫뉴스 수집
- * - 중복 기사 차단 (posted.json)
- * - CTR 낮은 기사 필터링
- * - 댓글 반응형 주제 선별
- * - 제목 자동 리라이팅
- * - 파트너 링크(pn) 붙여 텔레그램 전송
- * - posted.json GitHub 커밋으로 영구 중복 방지
- */
-
+// src/index.js
 import { scrapeHotNews } from "./newspicScraper.js";
-import { isDuplicate, savePosted } from "./dedupStore.js";
-import { makePartnerLink } from "./partnerLink.js";
 import { sendTelegram } from "./telegram.js";
-import { shouldPost, rewriteTitle } from "./ctrFilter.js";
-import { execSync } from "child_process";
+import { makePartnerLink } from "./partnerLink.js";
+import { isDuplicate, savePosted } from "./dedupStore.js";
+import { shouldPost } from "./ctrFilter.js";
 
-const MAX_POSTS_PER_RUN = 5;   // 🔧 한 번 실행당 최대 업로드 개수
-const SLEEP_MS = 1200;         // 요청 간 딜레이 (안정성)
+// 한 번 실행 시 최대 업로드 개수
+const MAX_POSTS_PER_RUN = 5;
 
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+// 최소 1개는 무조건 업로드 (0개 방지)
+const MIN_POST_PER_RUN = 1;
+
+// 제목 간단 리라이팅 (CTR 보정용)
+function rewriteTitle(title) {
+  const hooks = [
+    "🚨",
+    "⚠️",
+    "🔥",
+    "지금 난리 난 이유",
+    "이게 왜 화제냐면"
+  ];
+
+  // 이미 후킹 이모지가 있으면 그대로
+  if (/[🚨⚠️🔥]/.test(title)) return title;
+
+  const hook = hooks[Math.floor(Math.random() * hooks.length)];
+  return `${hook} ${title}`;
 }
 
 async function main() {
-  console.log("🚀 NewsPic AutoPost START");
+  console.log("🟢 뉴스픽 자동 수집 시작");
 
-  const articles = await scrapeHotNews();
-  if (!articles || articles.length === 0) {
-    console.log("⚠️ 수집된 기사 없음");
+  // 1️⃣ 뉴스픽 핫뉴스 수집
+  const newsList = await scrapeHotNews();
+
+  if (!newsList || newsList.length === 0) {
+    console.log("❌ 수집된 뉴스 없음");
     return;
   }
 
-  let postedCount = 0;
+  console.log(`📰 수집된 뉴스 수: ${newsList.length}`);
 
-  for (const article of articles) {
+  let postedCount = 0;
+  const candidates = [];
+
+  // 2️⃣ 필터 + 중복 체크
+  for (const news of newsList) {
     if (postedCount >= MAX_POSTS_PER_RUN) break;
 
-    const { nid, title, url } = article;
-    if (!nid || !title || !url) continue;
+    const { id, title, link } = news;
 
-    // 1️⃣ 중복 기사 차단
-    if (isDuplicate(nid)) {
-      console.log(`⏭️ DUPLICATE SKIP: ${nid}`);
+    // 중복 기사 스킵
+    if (isDuplicate(id)) {
+      console.log("⏭️ DUPLICATE SKIP:", title);
       continue;
     }
 
-    // 2️⃣ CTR 낮은 기사 + 무난한 기사 컷
+    // CTR 필터 판단
     const decision = shouldPost(title);
     if (!decision.ok) {
-      console.log(`🧹 FILTER SKIP (${decision.reason}): ${title}`);
+      console.log(`🧹 FILTER SKIP (${decision.reason}):`, title);
       continue;
     }
 
-    // 3️⃣ 제목 리라이팅
-    const newTitle = rewriteTitle(title);
+    candidates.push(news);
+  }
 
-    // 4️⃣ 파트너 링크 생성 (pn 붙이기)
-    const partnerUrl = makePartnerLink(url);
+  // 3️⃣ 조건 통과 기사 업로드
+  for (const news of candidates) {
+    if (postedCount >= MAX_POSTS_PER_RUN) break;
 
-    // 5️⃣ 텔레그램 메시지
-    const message =
-      `가장빠른 실시간 뉴스픽\n` +
-      `🚨 오늘의 핫이슈\n\n` +
-      `${newTitle}\n\n` +
-      `👉 원문 바로가기\n` +
-      `${partnerUrl}`;
+    const partnerUrl = makePartnerLink(news.link);
+    const finalTitle = rewriteTitle(news.title);
 
-    await sendTelegram(message);
+    await sendTelegram(partnerUrl, finalTitle);
 
-    // 6️⃣ 업로드 기록
-    savePosted(nid);
+    savePosted(news.id);
     postedCount++;
 
-    console.log(`✅ POSTED (${postedCount}/${MAX_POSTS_PER_RUN}): ${newTitle}`);
-
-    await sleep(SLEEP_MS);
+    console.log("✅ POSTED:", finalTitle);
   }
 
-  // 7️⃣ posted.json 커밋 → 다음 실행 때 중복 완전 차단
-  try {
-    execSync("git config user.name 'github-actions'", { stdio: "ignore" });
-    execSync("git config user.email 'github-actions@github.com'", { stdio: "ignore" });
-    execSync("git add posted.json", { stdio: "ignore" });
-    execSync("git commit -m 'update posted news'", { stdio: "ignore" });
-    execSync("git push", { stdio: "ignore" });
-    console.log("🧠 posted.json 커밋 완료");
-  } catch {
-    console.log("ℹ️ 변경사항 없음 (커밋 생략)");
+  // 4️⃣ 최소 1개 강제 업로드 (보험)
+  if (postedCount < MIN_POST_PER_RUN) {
+    const fallback = newsList.find(n => !isDuplicate(n.id));
+
+    if (fallback) {
+      console.log("⚠️ 조건 미달 → 1개 강제 업로드:", fallback.title);
+
+      const partnerUrl = makePartnerLink(fallback.link);
+      const finalTitle = rewriteTitle(fallback.title);
+
+      await sendTelegram(partnerUrl, finalTitle);
+      savePosted(fallback.id);
+
+      postedCount++;
+    }
   }
 
-  console.log("🏁 NewsPic AutoPost END");
+  console.log(`🏁 실행 종료 / 업로드 수: ${postedCount}`);
 }
 
-main().catch((err) => {
-  console.error("❌ FATAL ERROR:", err);
+// 실행
+main().catch(err => {
+  console.error("🔥 실행 중 오류 발생:", err);
   process.exit(1);
 });
