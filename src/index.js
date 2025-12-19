@@ -1,56 +1,34 @@
-// src/index.js
 import { scrapeHotNews } from "./newspicScraper.js";
 import { sendTelegram } from "./telegram.js";
-import { makePartnerLink } from "./partnerLink.js";
-import { isDuplicate, savePosted } from "./dedupStore.js";
 
-function rewriteTitle(title) {
-  const hooks = ["🚨", "🔥", "⚠️"];
-  if (/[🚨🔥⚠️]/.test(title)) return title;
-  return `${hooks[Math.floor(Math.random() * hooks.length)]} ${title}`;
-}
+console.log("🚀 index.js 실행 시작");
 
 async function main() {
-  console.log("🟢 [START] 뉴스픽 안전모드 실행");
+  console.log("📰 뉴스 수집 시작");
 
-  const newsList = await scrapeHotNews();
+  const articles = await scrapeHotNews();
 
-  if (!newsList || newsList.length === 0) {
-    console.log("❌ 수집된 뉴스 없음 → 종료");
+  console.log("🧪 수집된 기사 수:", articles.length);
+
+  // 🔥 강제 테스트: 기사 없어도 테스트 메시지 전송
+  if (articles.length === 0) {
+    console.log("⚠️ 기사 0개 → 강제 테스트 메시지 전송");
+    await sendTelegram(
+      "https://im.newspic.kr",
+      "[테스트] GitHub Actions → 텔레그램 연결 확인"
+    );
     return;
   }
 
-  console.log(`📰 수집된 뉴스 수: ${newsList.length}`);
+  // 🔥 첫 기사 하나만 테스트 전송
+  const a = articles[0];
 
-  // ✅ 1️⃣ 중복 아닌 첫 기사 무조건 선택
-  let target = null;
-  for (const news of newsList) {
-    if (!isDuplicate(news.id)) {
-      target = news;
-      break;
-    }
-  }
+  console.log("📤 테스트 기사 전송:", a.title);
 
-  // 만약 전부 중복이어도 첫 기사 강제 사용
-  if (!target) {
-    target = newsList[0];
-    console.log("⚠️ 전부 중복 → 첫 기사 강제 사용");
-  }
-
-  console.log("📌 선택된 기사:", target.title);
-
-  const finalTitle = rewriteTitle(target.title);
-  const partnerUrl = makePartnerLink(target.link);
-
-  console.log("📤 텔레그램 전송 시도");
-  await sendTelegram(partnerUrl, finalTitle);
-
-  savePosted(target.id);
-
-  console.log("✅ 업로드 완료");
+  await sendTelegram(a.url, a.title);
 }
 
 main().catch(err => {
-  console.error("🔥 치명적 오류:", err);
+  console.error("❌ main 실행 중 에러:", err);
   process.exit(1);
 });
