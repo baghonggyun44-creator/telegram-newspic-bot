@@ -1,55 +1,24 @@
-/**
- * dedupStore.js
- * 이미 올린 뉴스 중복 방지용 로컬 저장소
- * GitHub Actions 환경에서도 동작
- */
-
+// src/dedupStore.js
 import fs from "fs";
-import path from "path";
 
-const STORE_PATH = path.resolve(process.cwd(), "posted.json");
+const FILE = "./posted.json";
 
-
-/**
- * 저장된 파일 읽기
- */
-function loadStore() {
-  if (!fs.existsSync(STORE_PATH)) {
-    return [];
-  }
-  try {
-    const data = fs.readFileSync(STORE_PATH, "utf-8");
-    return JSON.parse(data);
-  } catch (e) {
-    return [];
-  }
+function load() {
+  if (!fs.existsSync(FILE)) return [];
+  return JSON.parse(fs.readFileSync(FILE, "utf-8"));
 }
 
-/**
- * 저장
- */
-function saveStore(list) {
-  fs.writeFileSync(STORE_PATH, JSON.stringify(list, null, 2));
+function save(data) {
+  fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
 }
 
-/**
- * 이미 올린 기사인지 체크
- * @param {string} key - 기사 고유값 (nid 등)
- * @returns {boolean}
- */
-export function isDuplicate(key) {
-  const store = loadStore();
-  return store.includes(key);
+export function isDuplicate(id) {
+  const posted = load();
+  return posted.includes(id);
 }
 
-/**
- * 기사 저장
- * @param {string} key
- */
-export function savePosted(key) {
-  const store = loadStore();
-  if (!store.includes(key)) {
-    store.push(key);
-    saveStore(store);
-  }
+export function savePosted(id) {
+  const posted = load();
+  posted.push(id);
+  save(posted);
 }
