@@ -7,7 +7,8 @@
 import fs from "fs";
 import path from "path";
 
-const STORE_PATH = path.resolve("./posted.json");
+const STORE_PATH = path.resolve(process.cwd(), "posted.json");
+
 
 /**
  * 저장된 파일 읽기
