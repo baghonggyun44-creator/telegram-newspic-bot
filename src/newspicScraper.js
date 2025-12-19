@@ -1,25 +1,43 @@
-// src/newspicScraper.js
 import axios from "axios";
-import * as cheerio from "cheerio";
+import cheerio from "cheerio";
 
 export async function scrapeHotNews() {
-  const res = await axios.get("https://m.newspic.kr/");
-  const $ = cheerio.load(res.data);
-
-  const items = [];
-
-  $(".news_item").each((_, el) => {
-    const title = $(el).find(".title").text().trim();
-    const link = $(el).find("a").attr("href");
-
-    if (!title || !link) return;
-
-    items.push({
-      id: link,
-      title,
-      url: `https://m.newspic.kr${link}`
+  try {
+    const res = await axios.get("https://m.newspic.kr/", {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+        "Accept-Language": "ko-KR,ko;q=0.9",
+      },
+      timeout: 10000,
     });
-  });
 
-  return items.slice(0, 10); // 최대 10개
+    const $ = cheerio.load(res.data);
+    const articles = [];
+
+    // 🔥 가장 안정적인 카드 단위 기준
+    $("a[href*='view.html']").each((_, el) => {
+      const href = $(el).attr("href");
+      const title = $(el).text().trim();
+
+      if (!href || !title) return;
+      if (title.length < 10) return;
+
+      const url = href.startsWith("http")
+        ? href
+        : `https://m.newspic.kr${href}`;
+
+      const idMatch = url.match(/nid=\d+/);
+      const id = idMatch ? idMatch[0] : url;
+
+      articles.push({ id, title, url });
+    });
+
+    console.log("🧪 스크래핑 결과 샘플:", articles.slice(0, 3));
+
+    return articles;
+  } catch (err) {
+    console.error("❌ 뉴스픽 스크래핑 실패:", err.message);
+    return [];
+  }
 }
