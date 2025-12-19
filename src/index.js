@@ -1,76 +1,69 @@
 /**
- * NewsPic Telegram AutoPost - index.js
- * 실행 진입점
- * Node.js 18+ / type: module 기준
+ * index.js
+ * 뉴스픽 핫뉴스 → 파트너 링크 생성 → 텔레그램 자동 업로드
+ * 중복 기사 완전 차단 (posted.json + git commit 유지)
  */
 
 import { scrapeHotNews } from "./newspicScraper.js";
-import { createPartnerLink } from "./partnerLink.js";
-import { sendTelegram } from "./telegram.js";
 import { isDuplicate, savePosted } from "./dedupStore.js";
+import { makePartnerLink } from "./partnerLink.js";
+import { sendTelegram } from "./telegram.js";
+import { execSync } from "child_process";
 
 async function main() {
-  console.log("🚀 NewsPic AutoPost start");
+  console.log("🚀 뉴스픽 자동 업로드 시작");
 
-  // 1️⃣ 뉴스픽 핫 뉴스 가져오기
-  const articles = await scrapeHotNews();
+  const newsList = await scrapeHotNews();
 
-  if (!articles || articles.length === 0) {
-    console.log("⚠️ 가져올 뉴스 없음");
-    return;
-  }
+  for (const news of newsList) {
+    const { title, url, nid } = news;
 
-  for (const article of articles) {
-    try {
-      const { title, nid, pn } = article;
-
-      // 2️⃣ 중복 체크
-      if (isDuplicate(nid)) {
-        console.log(`⏭️ 이미 전송됨: ${nid}`);
-        continue;
-      }
-
-      // 3️⃣ 뉴스픽 파트너 링크 생성
-      const partnerUrl = await createPartnerLink({
-        nid,
-        pn,
-        // cp = 파트너 키 (뉴스픽 계정 고유값)
-        // 👉 newspicScraper.js 또는 partnerLink.js 안에서 고정값 사용 중
-      });
-
-      if (!partnerUrl) {
-        console.log(`❌ 파트너 링크 생성 실패: ${nid}`);
-        continue;
-      }
-
-      // 4️⃣ 텔레그램 메시지 구성
-      const message =
-        `🚨 오늘의 핫이슈\n\n` +
-        `${title}\n\n` +
-        `👉 원문 바로가기\n` +
-        `${partnerUrl}`;
-
-      // 5️⃣ 텔레그램 전송
-      await sendTelegram(message);
-
-      // 6️⃣ 전송 완료 저장 (중복 방지)
-      savePosted(nid);
-
-      console.log(`✅ 전송 완료: ${title}`);
-
-      // 7️⃣ 과도한 요청 방지 (선택)
-      await new Promise((r) => setTimeout(r, 2000));
-
-    } catch (err) {
-      console.error("🔥 기사 처리 중 오류", err.message);
+    // 🔒 중복 체크
+    if (isDuplicate(nid)) {
+      console.log(`⏭️ 이미 업로드됨 → 스킵 (${nid})`);
+      continue;
     }
+
+    // 🔗 파트너 링크 생성
+    const partnerUrl = await makePartnerLink(url);
+
+    // 📨 텔레그램 메시지 구성
+    const message = `
+가장빠른 실시간 뉴스픽
+🚨 오늘의 핫이슈
+
+${title}
+
+👉 원문 바로가기
+${partnerUrl}
+`.trim();
+
+    // 📨 텔레그램 전송
+    await sendTelegram(message);
+
+    // 🧠 업로드 완료 → 저장
+    savePosted(nid);
+
+    console.log(`✅ 업로드 완료: ${title}`);
   }
 
-  console.log("🎉 NewsPic AutoPost end");
+  // 💾 posted.json GitHub에 커밋해서 중복 방지 유지
+  try {
+    execSync("git config user.name 'github-actions'");
+    execSync("git config user.email 'github-actions@github.com'");
+    execSync("git add posted.json");
+    execSync("git commit -m 'update posted news'");
+    execSync("git push");
+    console.log("🧠 posted.json 커밋 완료 (중복 방지 유지)");
+  } catch (e) {
+    console.log("ℹ️ 변경사항 없음 (커밋 생략)");
+  }
+
+  console.log("🏁 뉴스픽 자동 업로드 종료");
 }
 
-// GitHub Actions / 로컬 실행 공통
-main().catch((e) => {
-  console.error("❌ 치명적 오류", e);
+// 실행
+main().catch((err) => {
+  console.error("❌ 실행 중 오류 발생:", err);
   process.exit(1);
 });
