@@ -1,20 +1,29 @@
-import axios from "axios";
+/**
+ * partnerLink.js
+ * 뉴스픽 기사 URL → 내 뉴스픽 파트너 링크 생성
+ */
 
-export async function createPartnerLink({ nid, pn, cp }) {
-  const url = "https://m.newspic.kr/api/partners/link";
+const PARTNER_CODE = process.env.NEWSPIC_PARTNER_CODE;
 
-  const params = new URLSearchParams();
-  params.append(
-    "query",
-    `?nid=${nid}&pn=${pn}&cp=${cp}&utm_medium=affiliate&utm_campaign=${nid}&utm_source=np${cp}`
-  );
-  params.append("requestKey", cp);
+if (!PARTNER_CODE) {
+  throw new Error("❌ NEWSPIC_PARTNER_CODE 환경변수가 없습니다");
+}
 
-  const res = await axios.post(url, params, {
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-  });
+/**
+ * 뉴스픽 기사 URL을 파트너 링크로 변환
+ * @param {string} originalUrl
+ * @returns {string}
+ */
+export function makePartnerLink(originalUrl) {
+  try {
+    const url = new URL(originalUrl);
 
-  return res.data; // 👉 https://im.newspic.kr/xxxx
+    // pn 파라미터 세팅 (기존 값 있으면 덮어씀)
+    url.searchParams.set("pn", PARTNER_CODE);
+
+    return url.toString();
+  } catch (e) {
+    console.error("❌ 파트너 링크 생성 실패:", originalUrl);
+    return originalUrl;
+  }
 }
