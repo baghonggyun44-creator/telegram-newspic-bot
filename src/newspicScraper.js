@@ -1,5 +1,5 @@
 import axios from "axios";
-import cheerio from "cheerio";
+import * as cheerio from "cheerio";
 
 export async function fetchHotNews(url, limit) {
   const { data } = await axios.get(url, {
