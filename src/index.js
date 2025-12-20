@@ -1,30 +1,17 @@
-import { sendTelegram } from "./telegram.js";
-
-await sendTelegram("🧪 텔레그램 강제 테스트 메시지");
-
 import fetch from "node-fetch";
 import { isDuplicate, savePosted } from "./dedupStore.js";
 import { sendTelegram } from "./telegram.js";
 
 const RSS_URL = "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko";
 
-// 사건사고 키워드
-const ACCIDENT_KEYWORDS = [
-  "사망", "사고", "화재", "폭발", "추락", "구속",
-  "체포", "살인", "음주운전", "경찰", "검찰", "재판"
-];
-
-// 연예 차단 키워드
-const ENTERTAINMENT_BLOCK = [
-  "결혼", "출산", "열애", "컴백", "데뷔", "아이돌", "예능"
-];
-
 console.log("[START] newspic telegram bot");
+
+// ✅ 강제 테스트 (이 메시지 안 오면 100% 환경변수 문제)
+await sendTelegram("🧪 텔레그램 강제 테스트 메시지");
 
 async function fetchRSS() {
   const res = await fetch(RSS_URL, { signal: AbortSignal.timeout(10000) });
-  const text = await res.text();
-  return text;
+  return await res.text();
 }
 
 function parseTitles(xml) {
@@ -34,48 +21,28 @@ function parseTitles(xml) {
     .filter(t => !t.includes("Google 뉴스"));
 }
 
-function isAccident(title) {
-  return ACCIDENT_KEYWORDS.some(k => title.includes(k));
-}
-
-function isEntertainmentBlocked(title) {
-  return ENTERTAINMENT_BLOCK.some(k => title.includes(k));
-}
-
 (async () => {
   try {
     const rss = await fetchRSS();
     const titles = parseTitles(rss);
 
-    console.log("[DEBUG] fetched titles:", titles.length);
+    console.log("[DEBUG] titles count:", titles.length);
 
-    let filtered = titles.filter(t =>
-      isAccident(t) && !isEntertainmentBlocked(t)
-    );
-
-    console.log("[DEBUG] after filter:", filtered.length);
-
-    // ✅ fallback (이게 텔레그램 안 오던 문제 해결 포인트)
-    if (filtered.length === 0) {
-      console.log("[FALLBACK] no accident news, use general");
-      filtered = titles.slice(0, 1);
+    if (titles.length === 0) {
+      console.log("[STOP] no titles");
+      return;
     }
 
-    for (const title of filtered) {
-      const id = title;
-
-      if (isDuplicate(id)) {
-        console.log("[SKIP DUPLICATE]", title);
-        continue;
-      }
+    for (const title of titles.slice(0, 1)) {
+      if (isDuplicate(title)) continue;
 
       await sendTelegram(`🚨 뉴스픽\n\n${title}`);
-      savePosted(id);
+      savePosted(title);
     }
 
-    console.log("[DONE] finished");
+    console.log("[DONE]");
   } catch (e) {
-    console.error("[FATAL ERROR]", e.message);
+    console.error("[FATAL]", e.message);
     process.exit(1);
   }
 })();
