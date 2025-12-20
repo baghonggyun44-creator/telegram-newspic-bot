@@ -16,11 +16,17 @@ async function fetchRSS() {
   return await res.text();
 }
 
+// ✅ CDATA 유무 상관없이 title 파싱
 function parseTitles(xml) {
-  const matches = [...xml.matchAll(/<title><!\[CDATA\[(.*?)\]\]><\/title>/g)];
+  const matches = [...xml.matchAll(/<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/g)];
   return matches
-    .map(m => m[1])
-    .filter(t => t && !t.includes("Google 뉴스"));
+    .map(m => m[1].trim())
+    .filter(
+      t =>
+        t &&
+        !t.includes("Google 뉴스") &&
+        !t.includes("Google News")
+    );
 }
 
 (async () => {
@@ -28,13 +34,14 @@ function parseTitles(xml) {
     const rss = await fetchRSS();
     const titles = parseTitles(rss);
 
-    console.log("[DEBUG] titles:", titles);
+    console.log("[DEBUG] titles parsed:", titles.length);
 
     if (titles.length === 0) {
       console.log("[STOP] no titles parsed");
       return;
     }
 
+    // ▶ 테스트/운영 안정용: 1건만 전송
     const title = titles[0];
     const id = makeId(title);
 
