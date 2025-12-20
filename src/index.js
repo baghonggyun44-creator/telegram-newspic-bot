@@ -3,29 +3,20 @@ import crypto from "crypto";
 import { isDuplicate, savePosted } from "./dedupStore.js";
 import { sendTelegram } from "./telegram.js";
 
-console.log("[START] newspic accident hot/ctr bot");
+console.log("[START] newspic accident html bot");
 
 // =====================
 // 설정
 // =====================
-const CONTENT_API = "https://partners.newspic.kr/main/contentList";
+const LIST_URL = "https://m.newspic.kr/list?category=CA0105";
 
-// 사건·사고 채널 번호 (확정)
-const CHANNEL_NO = 12;
+// 주인님 뉴스픽 PN
+const MY_PN = "570"; // ← 본인 PN 확인
 
-// 허용 뱃지
-const ALLOWED_BADGES = ["핫클릭", "열독률"];
-
-// 내 뉴스픽 PN (❗ 반드시 본인 PN)
-const MY_PN = "570"; // ← 주인님 PN 값
-
-// 공통 헤더
 const HEADERS = {
   "user-agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-  "accept": "application/json, text/plain, */*",
-  "accept-language": "ko-KR,ko;q=0.9"
+  "accept-language": "ko-KR,ko;q=0.9",
 };
 
 // =====================
@@ -35,75 +26,73 @@ function makeId(nid) {
   return crypto.createHash("md5").update(String(nid)).digest("hex");
 }
 
+async function fetchHtml(url) {
+  const res = await fetch(url, { headers: HEADERS });
+  return await res.text();
+}
+
+// 사건사고 리스트에서 기사 추출
+function extractArticles(html) {
+  const results = [];
+
+  // view.html?nid=XXXX 형태 전부 추출 (순서 유지)
+  const regex = /href="\/view\.html\?nid=(\d+)"/g;
+  let match;
+
+  while ((match = regex.exec(html)) !== null) {
+    const nid = match[1];
+
+    // 제목은 nid 근처의 <strong> 또는 <p>에서 추출
+    const slice = html.slice(match.index, match.index + 500);
+    const titleMatch =
+      slice.match(/<strong[^>]*>(.*?)<\/strong>/) ||
+      slice.match(/<p[^>]*>(.*?)<\/p>/);
+
+    const title = titleMatch
+      ? titleMatch[1].replace(/<[^>]+>/g, "").trim()
+      : null;
+
+    if (nid && title) {
+      results.push({ nid, title });
+    }
+  }
+
+  return results;
+}
+
 // =====================
 // 메인
 // =====================
 (async () => {
   try {
-    // 1️⃣ 사건·사고 콘텐츠 목록 요청
-    const body = new URLSearchParams({
-      channelNo: CHANNEL_NO,
-      inputSwitch: "false",
-      adultContentCheck: "N",
-      pageSize: "20"
-    }).toString();
+    const html = await fetchHtml(LIST_URL);
+    const articles = extractArticles(html);
 
-    const res = await fetch(CONTENT_API, {
-      method: "POST",
-      headers: HEADERS,
-      body
-    });
+    console.log("[DEBUG] extracted articles:", articles.length);
 
-    if (!res.ok) {
-      throw new Error("contentList API failed");
-    }
-
-    const json = await res.json();
-    const list = json?.recList || [];
-
-    console.log("[DEBUG] recList count:", list.length);
-
-    if (!list.length) {
-      console.log("[STOP] no articles");
+    if (!articles.length) {
+      console.log("[STOP] no articles found");
       return;
     }
 
-    // 2️⃣ 핫클릭 / 열독률 기사 우선 선택
-    let target = null;
+    // 1️⃣ 화면 맨 위 기사 사용
+    const top = articles[0];
 
-    for (const item of list) {
-      if (!ALLOWED_BADGES.includes(item.recomTypeName)) continue;
-      target = item;
-      break;
-    }
-
-    // 없으면 1위 기사 fallback
-    if (!target) {
-      target = list[0];
-      console.log("[FALLBACK] top rank article used");
-    }
-
-    const nid = target.nid;
-    const title = target.title;
-    const badge = target.recomTypeName || "사건·사고";
-
-    const id = makeId(nid);
+    const id = makeId(top.nid);
     if (isDuplicate(id)) {
       console.log("[STOP] duplicate article");
       return;
     }
 
-    // 3️⃣ 뉴스픽 기사 링크 생성 (수익 구조 유지)
     const articleUrl =
-      `https://m.newspic.kr/view.html?nid=${nid}&pn=${MY_PN}`;
+      `https://m.newspic.kr/view.html?nid=${top.nid}&pn=${MY_PN}`;
 
-    // 4️⃣ 텔레그램 전송
     await sendTelegram(
-      `🚨 사건·사고 TOP 뉴스 (${badge})\n\n${title}\n\n👉 원문 바로가기\n${articleUrl}`
+      `🚨 사건·사고 TOP 뉴스\n\n${top.title}\n\n👉 원문 바로가기\n${articleUrl}`
     );
 
     savePosted(id);
-    console.log("[DONE] sent:", title);
+    console.log("[DONE] sent:", top.title);
 
   } catch (e) {
     console.error("[FATAL ERROR]", e.message);
