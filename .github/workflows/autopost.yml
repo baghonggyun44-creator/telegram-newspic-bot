@@ -9,19 +9,15 @@ jobs:
   run:
     runs-on: ubuntu-latest
 
+    env:
+      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Restore dedup cache
-        uses: actions/cache@v4
-        with:
-          path: data
-          key: newspic-dedup-${{ github.run_id }}
-          restore-keys: |
-            newspic-dedup-
-
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -31,12 +27,3 @@ jobs:
 
       - name: Run bot
         run: npm run start
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
-      - name: Save dedup cache
-        uses: actions/cache@v4
-        with:
-          path: data
-          key: newspic-dedup-${{ github.run_id }}
