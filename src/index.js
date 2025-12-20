@@ -7,6 +7,10 @@ const RSS_URL = "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko";
 
 console.log("[START] newspic telegram bot");
 
+function makeId(title) {
+  return crypto.createHash("md5").update(title).digest("hex");
+}
+
 async function fetchRSS() {
   const res = await fetch(RSS_URL, { signal: AbortSignal.timeout(10000) });
   return await res.text();
@@ -16,12 +20,7 @@ function parseTitles(xml) {
   const matches = [...xml.matchAll(/<title><!\[CDATA\[(.*?)\]\]><\/title>/g)];
   return matches
     .map(m => m[1])
-    .filter(t => !t.includes("Google 뉴스"));
-}
-
-// ✅ hash 기반 ID 생성 (운영 안정화 핵심)
-function makeId(title) {
-  return crypto.createHash("md5").update(title).digest("hex");
+    .filter(t => t && !t.includes("Google 뉴스"));
 }
 
 (async () => {
@@ -29,29 +28,27 @@ function makeId(title) {
     const rss = await fetchRSS();
     const titles = parseTitles(rss);
 
-    console.log("[DEBUG] titles count:", titles.length);
+    console.log("[DEBUG] titles:", titles);
 
     if (titles.length === 0) {
-      console.log("[STOP] no titles");
+      console.log("[STOP] no titles parsed");
       return;
     }
 
-    // 👉 현재는 테스트 안정성을 위해 1건만 전송
-    for (const title of titles.slice(0, 1)) {
-      const id = makeId(title);
+    const title = titles[0];
+    const id = makeId(title);
 
-      if (isDuplicate(id)) {
-        console.log("[SKIP DUPLICATE]", title);
-        continue;
-      }
-
-      await sendTelegram(`🚨 뉴스픽\n\n${title}`);
-      savePosted(id);
+    if (isDuplicate(id)) {
+      console.log("[SKIP DUPLICATE]", title);
+      return;
     }
 
-    console.log("[DONE]");
+    await sendTelegram(`🚨 뉴스픽\n\n${title}`);
+    savePosted(id);
+
+    console.log("[DONE] sent 1 news");
   } catch (e) {
-    console.error("[FATAL]", e.message);
+    console.error("[FATAL ERROR]", e.message);
     process.exit(1);
   }
 })();
