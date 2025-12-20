@@ -7,7 +7,7 @@ import { sendTelegram } from "./telegram.js";
 console.log("[START] newspic accident html bot");
 
 // 🧪 텔레그램 연결 확인용 (이 메시지 오면 봇/환경 정상)
-await sendTelegram("🧪 [TEST] 뉴스픽 사건사고 봇 시작");
+// await sendTelegram("🧪 [TEST] 뉴스픽 사건사고 봇 시작");
 
 /**
  * 뉴스픽 모바일 사건사고 페이지
