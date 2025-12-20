@@ -3,7 +3,7 @@ name: Telegram NewsPic AutoPost
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/10 * * * *"   # 10분마다 (원하면 나중에 변경)
+    - cron: "*/10 * * * *"   # 10분마다 실행 (원하면 조정)
 
 jobs:
   run:
