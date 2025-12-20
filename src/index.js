@@ -1,4 +1,5 @@
 import fetch from "node-fetch";
+import cheerio from "cheerio";
 import crypto from "crypto";
 import { isDuplicate, savePosted } from "./dedupStore.js";
 import { sendTelegram } from "./telegram.js";
@@ -9,9 +10,7 @@ console.log("[START] newspic accident html bot");
 // 설정
 // =====================
 const LIST_URL = "https://m.newspic.kr/list?category=CA0105";
-
-// 주인님 뉴스픽 PN
-const MY_PN = "570"; // ← 본인 PN 확인
+const MY_PN = "570"; // ← 주인님 PN
 
 const HEADERS = {
   "user-agent":
@@ -31,42 +30,32 @@ async function fetchHtml(url) {
   return await res.text();
 }
 
-// 사건사고 리스트에서 기사 추출
-function extractArticles(html) {
-  const results = [];
-
-  // view.html?nid=XXXX 형태 전부 추출 (순서 유지)
-  const regex = /href="\/view\.html\?nid=(\d+)"/g;
-  let match;
-
-  while ((match = regex.exec(html)) !== null) {
-    const nid = match[1];
-
-    // 제목은 nid 근처의 <strong> 또는 <p>에서 추출
-    const slice = html.slice(match.index, match.index + 500);
-    const titleMatch =
-      slice.match(/<strong[^>]*>(.*?)<\/strong>/) ||
-      slice.match(/<p[^>]*>(.*?)<\/p>/);
-
-    const title = titleMatch
-      ? titleMatch[1].replace(/<[^>]+>/g, "").trim()
-      : null;
-
-    if (nid && title) {
-      results.push({ nid, title });
-    }
-  }
-
-  return results;
-}
-
 // =====================
 // 메인
 // =====================
 (async () => {
   try {
     const html = await fetchHtml(LIST_URL);
-    const articles = extractArticles(html);
+    const $ = cheerio.load(html);
+
+    const articles = [];
+
+    // 👉 모바일 뉴스픽 기사 카드 구조 기준
+    $("a[href*='view.html?nid=']").each((i, el) => {
+      const href = $(el).attr("href");
+      const title =
+        $(el).find(".title").text().trim() ||
+        $(el).find("h2").text().trim() ||
+        $(el).text().trim();
+
+      const nidMatch = href.match(/nid=(\d+)/);
+      if (!nidMatch || !title) return;
+
+      articles.push({
+        nid: nidMatch[1],
+        title,
+      });
+    });
 
     console.log("[DEBUG] extracted articles:", articles.length);
 
@@ -75,10 +64,10 @@ function extractArticles(html) {
       return;
     }
 
-    // 1️⃣ 화면 맨 위 기사 사용
+    // 1️⃣ 화면 맨 위 기사
     const top = articles[0];
-
     const id = makeId(top.nid);
+
     if (isDuplicate(id)) {
       console.log("[STOP] duplicate article");
       return;
