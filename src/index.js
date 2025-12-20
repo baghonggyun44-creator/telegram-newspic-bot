@@ -1,89 +1,102 @@
 import fetch from "node-fetch";
 import crypto from "crypto";
-import { load } from "cheerio";
 import { isDuplicate, savePosted } from "./dedupStore.js";
 import { sendTelegram } from "./telegram.js";
 
-console.log("[START] newspic accident html bot");
+console.log("[START] newspic accident API bot");
 
-// 🧪 텔레그램 연결 확인용 (이 메시지 오면 봇/환경 정상)
+// 🔐 GitHub Secret
+const COOKIE = process.env.NEWSPIC_COOKIE;
+if (!COOKIE) {
+  console.error("[FATAL] NEWSPIC_COOKIE is missing");
+  process.exit(1);
+}
 
-/**
- * 뉴스픽 모바일 사건사고 페이지
- */
-const TARGET_URL = "https://m.newspic.kr/news?category=CA0105";
+// 사건사고 채널 번호 (확정)
+const CHANNEL_NO = 12;
 
-/**
- * 중복 방지용 ID (nid 기준)
- */
+// 우선순위 뱃지
+const ALLOWED_RECOM_TYPES = [
+  "열독률",
+  "핫클릭",
+  "인기",
+  "공유많은"
+];
+
+// 중복 방지 (nid 기준)
 function makeId(nid) {
   return crypto.createHash("md5").update(String(nid)).digest("hex");
 }
 
-async function fetchHtml(url) {
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    },
-  });
+async function fetchAccidentArticles() {
+  const res = await fetch(
+    "https://partners.newspic.kr/main/contentList",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Cookie": COOKIE
+      },
+      body: new URLSearchParams({
+        channelNo: CHANNEL_NO,
+        pageSize: 20
+      })
+    }
+  );
 
-  return res.text();
+  const text = await res.text();
+
+  // ❗ 로그인 풀리면 HTML이 떨어짐 → 바로 차단
+  if (text.startsWith("<!DOCTYPE")) {
+    throw new Error("Not logged in (HTML response)");
+  }
+
+  return JSON.parse(text);
 }
 
 (async () => {
   try {
-    console.log("[FETCH]", TARGET_URL);
-    const html = await fetchHtml(TARGET_URL);
+    const data = await fetchAccidentArticles();
+    const list = data?.recomList || [];
 
-    const $ = load(html);
+    console.log("[DEBUG] articles fetched:", list.length);
 
-    const articles = [];
-
-    // 🔥 사건사고 리스트 파싱
-    $("section:contains('사건사고')")
-      .find("li")
-      .each((_, el) => {
-        const link = $(el).find("a").attr("href");
-        const title = $(el).find("p").text().trim();
-
-        if (!link || !title) return;
-
-        const nidMatch = link.match(/nid=(\d+)/);
-        if (!nidMatch) return;
-
-        articles.push({
-          nid: nidMatch[1],
-          title,
-          url: link.startsWith("http")
-            ? link
-            : `https://m.newspic.kr${link}`,
-        });
-      });
-
-    console.log("[DEBUG] extracted articles:", articles.length);
-
-    if (articles.length === 0) {
-      console.log("[STOP] no articles found");
+    if (list.length === 0) {
+      console.log("[STOP] no articles");
       return;
     }
 
-    // 🔥 첫 번째 기사만 처리
-    const article = articles[0];
-    const id = makeId(article.nid);
+    // 1️⃣ 사건사고 + 우선순위 뱃지 + 1순위
+    const target = list.find(
+      a =>
+        a.imRank === 1 &&
+        ALLOWED_RECOM_TYPES.includes(a.recomTypeName)
+    );
 
+    if (!target) {
+      console.log("[STOP] no suitable ranked article");
+      return;
+    }
+
+    const id = makeId(target.nid);
     if (isDuplicate(id)) {
       console.log("[STOP] duplicate article");
       return;
     }
 
+    const newspicUrl =
+      `https://m.newspic.kr/view.html?nid=${target.nid}`;
+
     await sendTelegram(
-      `🚨 가장 빠른 실시간 뉴스픽\n\n${article.title}\n\n👉 원문 바로가기\n${article.url}`
+      `🚨 가장 빠른 실시간 뉴스픽\n\n${target.title}\n\n` +
+      `🏷 ${target.recomTypeName}\n\n` +
+      `👉 원문 바로가기\n${newspicUrl}`
     );
 
     savePosted(id);
-
-    console.log("[DONE] sent:", article.title);
+    console.log("[DONE] sent:", target.title);
   } catch (e) {
     console.error("[FATAL ERROR]", e.message);
     process.exit(1);
