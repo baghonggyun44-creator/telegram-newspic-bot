@@ -1,54 +1,54 @@
 import { scrapeHotNews } from "./newspicScraper.js";
 import { sendTelegram } from "./telegram.js";
-import { isDuplicate, savePosted } from "./dedupStore.js";
+import { isDuplicateByTitle, saveTitle } from "./dedupStore.js";
+import { detectCategory } from "./category.js";
 
-console.log("🚀 NewsPic Telegram AutoPost 시작");
+console.log("🚀 뉴스픽 자동 업로드 시작");
 
 async function main() {
-  console.log("📰 뉴스픽 핫이슈 수집 중...");
   const articles = await scrapeHotNews();
 
-  console.log(`🔎 수집된 기사 수: ${articles.length}`);
+  console.log(`📰 수집 기사 수: ${articles.length}`);
+  if (articles.length === 0) return;
 
-  if (articles.length === 0) {
-    console.log("⚠️ 기사 없음 → 종료");
-    return;
+  const selected = [];
+  const usedCategories = new Set();
+
+  for (const a of articles) {
+    if (selected.length >= 3) break;
+
+    if (isDuplicateByTitle(a.title)) {
+      console.log("⛔ 중복 기사 스킵:", a.title);
+      continue;
+    }
+
+    const category = detectCategory(a.title);
+
+    if (usedCategories.has(category)) {
+      console.log("⛔ 카테고리 중복 스킵:", category);
+      continue;
+    }
+
+    usedCategories.add(category);
+    selected.push({ ...a, category });
   }
 
-  // 🔽 필터 완화 전략
-  const candidates = articles
-    // 제목 길이 너무 짧거나 광고성 제외
-    .filter(a => a.title && a.title.length >= 10)
-    // 중복만 최소 차단
-    .filter(a => !isDuplicate(a.id))
-    // 최대 3개만 전송
-    .slice(0, 3);
+  console.log(`📤 최종 업로드 기사 수: ${selected.length}`);
 
-  console.log(`📤 전송 대상 기사 수: ${candidates.length}`);
+  for (const a of selected) {
+    console.log(`➡️ 업로드 [${a.category}] ${a.title}`);
 
-  if (candidates.length === 0) {
-    console.log("⚠️ 전송 대상 없음 (중복 때문일 가능성 큼)");
-    return;
-  }
+    await sendTelegram(a.url, a.title);
 
-  for (const a of candidates) {
-    console.log("➡️ 전송:", a.title);
+    saveTitle(a.title);
 
-    await sendTelegram(
-      a.url,
-      a.title
-    );
-
-    savePosted(a.id);
-
-    // ⏱️ 텔레그램 스팸 방지용 딜레이
     await new Promise(r => setTimeout(r, 1500));
   }
 
-  console.log("✅ 기사 전송 완료");
+  console.log("✅ 업로드 완료");
 }
 
 main().catch(err => {
-  console.error("❌ 실행 중 에러:", err);
+  console.error("❌ 실행 오류:", err);
   process.exit(1);
 });
