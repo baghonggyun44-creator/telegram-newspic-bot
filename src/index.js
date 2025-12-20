@@ -5,29 +5,35 @@ import { sendTelegram } from "./telegram.js";
 
 console.log("[START] newspic telegram bot");
 
+/**
+ * 뉴스픽 모바일 목록 페이지
+ */
 const FEED_URLS = [
   "https://m.newspic.kr/",
   "https://m.newspic.kr/index.html",
   "https://m.newspic.kr/main.html"
 ];
 
-const ACCIDENT_KEYWORDS = [
-  "사망","사고","화재","폭발","추락","붕괴",
-  "구속","체포","살인","폭행","음주운전",
-  "경찰","검찰","재판","특검","기소","압수수색",
-  "피의자","피해자","중상","참사","숨져","참변","충돌"
-];
+/**
+ * ✅ 메인 기준 배지 (4종)
+ */
+const BADGES = ["열독률", "핫클릭", "인기", "공유많은"];
 
+/**
+ * ❌ 최소 연예/홍보 차단
+ */
 const ENTERTAINMENT_BLOCK = [
-  "결혼","열애","출산","컴백","팬미팅","화보","신곡","콘서트"
+  "결혼","열애","출산","컴백","팬미팅",
+  "화보","신곡","콘서트","예능","아이돌"
 ];
 
-function makeIdFromUrl(url) {
-  return crypto.createHash("md5").update(url).digest("hex");
-}
+// ===== 유틸 =====
 
-function isAccident(title) {
-  return ACCIDENT_KEYWORDS.some(k => title.includes(k));
+// nid 기준 중복 방지
+function makeIdFromUrl(url) {
+  const m = url.match(/nid=(\d+)/);
+  const nid = m ? m[1] : url;
+  return crypto.createHash("md5").update(nid).digest("hex");
 }
 
 function isBlockedEntertainment(title) {
@@ -39,75 +45,88 @@ async function fetchText(url) {
   return { status: res.status, text: await res.text() };
 }
 
-function extractViewLinks(html) {
-  const regex = /https?:\/\/m\.newspic\.kr\/view\.html\?nid=\d+&pn=\d+/g;
-  return [...new Set(html.match(regex) || [])];
+/**
+ * 🔥 기사 카드 단위로 분리해서
+ * 배지(열독률/핫클릭/인기/공유많은) 포함된 기사만 추출
+ */
+function extractPreferredArticles(html) {
+  const blocks = html.split("view.html");
+  const results = [];
+
+  for (const block of blocks) {
+    if (!BADGES.some(b => block.includes(b))) continue;
+
+    const m = block.match(/view\.html\?nid=\d+&pn=\d+/);
+    if (m) {
+      results.push("https://m.newspic.kr/" + m[0]);
+    }
+  }
+
+  return [...new Set(results)];
 }
 
+/**
+ * 기사 제목 추출 (OG 우선)
+ */
 async function getTitleFromView(url) {
   const { status, text } = await fetchText(url);
   if (status !== 200) return "";
 
-  const og = text.match(/property=["']og:title["']\s+content=["']([^"']+)["']/i);
+  const og = text.match(
+    /property=["']og:title["']\s+content=["']([^"']+)["']/i
+  );
   if (og?.[1]) return og[1].trim();
 
   const t = text.match(/<title>(.*?)<\/title>/i);
   return t?.[1]?.trim() || "";
 }
 
+// ===== 메인 =====
+
 (async () => {
   try {
-    let viewLinks = [];
+    let candidateUrls = [];
 
+    // 1️⃣ 목록 페이지에서 배지 기반 기사 추출
     for (const url of FEED_URLS) {
+      console.log("[FETCH FEED]", url);
       const { status, text } = await fetchText(url);
       if (status !== 200) continue;
 
-      const links = extractViewLinks(text);
-      if (links.length) {
-        viewLinks = links;
+      const urls = extractPreferredArticles(text);
+      if (urls.length) {
+        candidateUrls = urls;
         break;
       }
     }
 
-    if (!viewLinks.length) {
-      console.log("[STOP] no view links");
+    if (!candidateUrls.length) {
+      console.log("[STOP] no badge articles found");
       return;
     }
 
-    let fallback = null;
-
-    for (const url of viewLinks) {
+    // 2️⃣ 하나씩 검사 → 첫 통과 기사 전송
+    for (const url of candidateUrls) {
       const id = makeIdFromUrl(url);
       if (isDuplicate(id)) continue;
 
       const title = await getTitleFromView(url);
       if (!title) continue;
 
-      if (!fallback) fallback = { id, title, url };
-
       if (isBlockedEntertainment(title)) continue;
-      if (!isAccident(title)) continue;
 
       await sendTelegram(
-        `🚨 가장 빠른 실시간 뉴스픽\n\n${title}\n\n👉 원문 바로가기\n${url}`
+        `🔥 사람들이 많이 보는 뉴스\n\n${title}\n\n👉 원문 바로가기\n${url}`
       );
+
       savePosted(id);
-      console.log("[DONE] accident sent");
+      console.log("[DONE] sent badge article");
       return;
     }
 
-    // ✅ 사건사고 없으면 fallback 1건 전송
-    if (fallback) {
-      await sendTelegram(
-        `📰 가장 빠른 실시간 뉴스픽\n\n${fallback.title}\n\n👉 원문 바로가기\n${fallback.url}`
-      );
-      savePosted(fallback.id);
-      console.log("[DONE] fallback sent");
-    }
-
+    console.log("[STOP] all badge articles were duplicates or blocked");
   } catch (e) {
-    console.error("[FATAL]", e.message);
+    console.error("[FATAL ERROR]", e.message);
     process.exit(1);
   }
 })();
