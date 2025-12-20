@@ -5,23 +5,13 @@ import { sendTelegram } from "./telegram.js";
 
 console.log("[START] newspic telegram bot");
 
-/**
- * 뉴스픽 모바일 목록 페이지
- */
 const FEED_URLS = [
   "https://m.newspic.kr/",
   "https://m.newspic.kr/index.html",
   "https://m.newspic.kr/main.html"
 ];
 
-/**
- * ✅ 메인 기준 배지 (4종)
- */
-const BADGES = ["열독률", "핫클릭", "인기", "공유많은"];
-
-/**
- * ❌ 최소 연예/홍보 차단
- */
+// 최소 연예/홍보 차단 (너무 빡세지 않게)
 const ENTERTAINMENT_BLOCK = [
   "결혼","열애","출산","컴백","팬미팅",
   "화보","신곡","콘서트","예능","아이돌"
@@ -29,7 +19,7 @@ const ENTERTAINMENT_BLOCK = [
 
 // ===== 유틸 =====
 
-// nid 기준 중복 방지
+// nid 기준 중복 방지 (pn 변화 무관)
 function makeIdFromUrl(url) {
   const m = url.match(/nid=(\d+)/);
   const nid = m ? m[1] : url;
@@ -45,29 +35,14 @@ async function fetchText(url) {
   return { status: res.status, text: await res.text() };
 }
 
-/**
- * 🔥 기사 카드 단위로 분리해서
- * 배지(열독률/핫클릭/인기/공유많은) 포함된 기사만 추출
- */
-function extractPreferredArticles(html) {
-  const blocks = html.split("view.html");
-  const results = [];
-
-  for (const block of blocks) {
-    if (!BADGES.some(b => block.includes(b))) continue;
-
-    const m = block.match(/view\.html\?nid=\d+&pn=\d+/);
-    if (m) {
-      results.push("https://m.newspic.kr/" + m[0]);
-    }
-  }
-
-  return [...new Set(results)];
+// 뉴스픽 메인 HTML에서 view.html 링크 전부 추출 (등장 순서 유지)
+function extractViewLinks(html) {
+  const regex =
+    /https?:\/\/m\.newspic\.kr\/view\.html\?nid=\d+&pn=\d+/g;
+  return [...new Set(html.match(regex) || [])];
 }
 
-/**
- * 기사 제목 추출 (OG 우선)
- */
+// 기사 제목 추출 (OG 우선)
 async function getTitleFromView(url) {
   const { status, text } = await fetchText(url);
   if (status !== 200) return "";
@@ -85,28 +60,28 @@ async function getTitleFromView(url) {
 
 (async () => {
   try {
-    let candidateUrls = [];
+    let viewLinks = [];
 
-    // 1️⃣ 목록 페이지에서 배지 기반 기사 추출
-    for (const url of FEED_URLS) {
-      console.log("[FETCH FEED]", url);
-      const { status, text } = await fetchText(url);
+    // 1️⃣ 뉴스픽 메인에서 상단 기사 링크 수집
+    for (const feed of FEED_URLS) {
+      console.log("[FETCH FEED]", feed);
+      const { status, text } = await fetchText(feed);
       if (status !== 200) continue;
 
-      const urls = extractPreferredArticles(text);
-      if (urls.length) {
-        candidateUrls = urls;
+      const links = extractViewLinks(text);
+      if (links.length) {
+        viewLinks = links;
         break;
       }
     }
 
-    if (!candidateUrls.length) {
-      console.log("[STOP] no badge articles found");
+    if (!viewLinks.length) {
+      console.log("[STOP] no view links found");
       return;
     }
 
-    // 2️⃣ 하나씩 검사 → 첫 통과 기사 전송
-    for (const url of candidateUrls) {
+    // 2️⃣ 상단부터 하나씩 검사 → 첫 유효 기사 전송
+    for (const url of viewLinks) {
       const id = makeIdFromUrl(url);
       if (isDuplicate(id)) continue;
 
@@ -116,15 +91,15 @@ async function getTitleFromView(url) {
       if (isBlockedEntertainment(title)) continue;
 
       await sendTelegram(
-        `🔥 사람들이 많이 보는 뉴스\n\n${title}\n\n👉 원문 바로가기\n${url}`
+        `🔥 가장 빠른 실시간 뉴스픽\n\n${title}\n\n👉 원문 바로가기\n${url}`
       );
 
       savePosted(id);
-      console.log("[DONE] sent badge article");
+      console.log("[DONE] sent:", title);
       return;
     }
 
-    console.log("[STOP] all badge articles were duplicates or blocked");
+    console.log("[STOP] all top articles were duplicates or blocked");
   } catch (e) {
     console.error("[FATAL ERROR]", e.message);
     process.exit(1);
