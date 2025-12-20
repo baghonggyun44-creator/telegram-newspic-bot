@@ -7,7 +7,7 @@ import { sendTelegram } from "./telegram.js";
  * ✅ 주인님 뉴스픽 계정 pn
  * 예전 링크에서 pn=570 이었으니 기본값 570
  */
-const PN = "570";
+const PN = "695";
 
 /**
  * ✅ 뉴스픽 "이미 존재하는 기사 목록"에서 nid를 뽑아오기 위한 후보 URL들
