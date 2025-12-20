@@ -12,18 +12,15 @@ export async function sendTelegram(text) {
     body: JSON.stringify({
       chat_id: CHAT_ID,
       text,
-      disable_web_page_preview: true
+      disable_web_page_preview: false
     }),
     signal: AbortSignal.timeout(10000)
   });
 
   const result = await res.json();
-
   console.log("[TELEGRAM RESPONSE]", result);
 
   if (!result.ok) {
-    throw new Error(
-      `Telegram send failed: ${result.description || "unknown error"}`
-    );
+    throw new Error(result.description || "Telegram send failed");
   }
 }
