@@ -16,11 +16,14 @@ const ENTERTAINMENT_BLOCK = [
   "화보","신곡","콘서트","예능","아이돌"
 ];
 
+const HEADERS = {
+  "user-agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+};
+
 // =====================
 // 유틸
 // =====================
-
-// nid 기준 중복 방지
 function makeIdFromUrl(url) {
   const m = url.match(/nid=(\d+)/);
   const nid = m ? m[1] : url;
@@ -31,13 +34,11 @@ function isBlockedEntertainment(title) {
   return ENTERTAINMENT_BLOCK.some(k => title.includes(k));
 }
 
-// RSS 가져오기
 async function fetchText(url) {
-  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  const res = await fetch(url, { headers: HEADERS });
   return await res.text();
 }
 
-// Google News RSS 파싱
 function parseRss(xml) {
   const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
   return items.map(item => {
@@ -46,22 +47,18 @@ function parseRss(xml) {
       block.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/)?.[1] ||
       block.match(/<title>(.*?)<\/title>/)?.[1] ||
       "";
-
-    const link =
-      block.match(/<link>(.*?)<\/link>/)?.[1] || "";
-
+    const link = block.match(/<link>(.*?)<\/link>/)?.[1] || "";
     return { title: title.trim(), link: link.trim() };
   });
 }
 
-// 🔥 Google News 링크 → 실제 newspic 링크로 변환
 async function resolveFinalUrl(url) {
   try {
     const res = await fetch(url, {
-      redirect: "follow",
-      signal: AbortSignal.timeout(15000)
+      headers: HEADERS,
+      redirect: "follow"
     });
-    return res.url; // ⭐ 최종 도착 URL
+    return res.url;
   } catch {
     return "";
   }
@@ -77,28 +74,43 @@ async function resolveFinalUrl(url) {
 
     console.log("[DEBUG] rss articles count:", articles.length);
 
-    for (const { title, link } of articles) {
-      if (!link) continue;
-      if (!title) continue;
-      if (isBlockedEntertainment(title)) continue;
+    let fallback = null;
 
-      // 🔥 리다이렉트 해제
+    for (const { title, link } of articles) {
+      if (!title || !link) continue;
+
       const finalUrl = await resolveFinalUrl(link);
-      if (!finalUrl.includes("newspic.kr/view.html")) continue;
+      if (!finalUrl) continue;
 
       const id = makeIdFromUrl(finalUrl);
       if (isDuplicate(id)) continue;
 
+      if (!fallback) {
+        fallback = { title, finalUrl, id };
+      }
+
+      if (isBlockedEntertainment(title)) continue;
+      if (!finalUrl.includes("newspic.kr/view.html")) continue;
+
       await sendTelegram(
         `🔥 가장 빠른 실시간 뉴스픽\n\n${title}\n\n👉 원문 바로가기\n${finalUrl}`
       );
-
       savePosted(id);
-      console.log("[DONE] sent:", title);
+      console.log("[DONE] sent (filtered):", title);
       return;
     }
 
-    console.log("[STOP] no suitable article found");
+    // 🔥 조건 통과 기사 없으면 fallback 1건 전송
+    if (fallback) {
+      await sendTelegram(
+        `📰 가장 빠른 실시간 뉴스픽\n\n${fallback.title}\n\n👉 원문 바로가기\n${fallback.finalUrl}`
+      );
+      savePosted(fallback.id);
+      console.log("[DONE] sent (fallback):", fallback.title);
+      return;
+    }
+
+    console.log("[STOP] nothing to send");
 
   } catch (e) {
     console.error("[FATAL ERROR]", e.message);
