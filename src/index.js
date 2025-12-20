@@ -5,7 +5,7 @@ import { sendTelegram } from "./telegram.js";
 
 console.log("[START] newspic accident API bot");
 
-// 🔐 GitHub Actions env
+// 🔐 GitHub Actions 환경변수
 const COOKIE = process.env.NEWSPIC_COOKIE;
 if (!COOKIE) {
   console.error("[FATAL] NEWSPIC_COOKIE is missing");
@@ -15,7 +15,7 @@ if (!COOKIE) {
 // 사건사고 채널 번호 (확정)
 const CHANNEL_NO = 12;
 
-// 허용 뱃지
+// 우선 고려할 뱃지
 const ALLOWED_RECOM_TYPES = [
   "열독률",
   "핫클릭",
@@ -28,6 +28,7 @@ function makeId(nid) {
   return crypto.createHash("md5").update(String(nid)).digest("hex");
 }
 
+// 사건사고 기사 목록 API 호출
 async function fetchAccidentArticles() {
   const res = await fetch(
     "https://partners.newspic.kr/main/contentList",
@@ -48,7 +49,7 @@ async function fetchAccidentArticles() {
 
   const text = await res.text();
 
-  // 로그인 풀리면 HTML이 내려옴 → 즉시 차단
+  // 로그인 풀리면 HTML이 내려옴
   if (text.startsWith("<!DOCTYPE")) {
     throw new Error("Not logged in (HTML response)");
   }
@@ -68,15 +69,20 @@ async function fetchAccidentArticles() {
       return;
     }
 
-    // 사건사고 + 1순위 + 우선 뱃지
-    const target = list.find(
-      a =>
-        a.imRank === 1 &&
-        ALLOWED_RECOM_TYPES.includes(a.recomTypeName)
-    );
+    /**
+     * 1️⃣ 뱃지 있는 기사 중 가장 상단(imRank 최소)
+     * 2️⃣ 없으면 그냥 사건사고 최상단 기사
+     */
+    let target = list
+      .filter(a => ALLOWED_RECOM_TYPES.includes(a.recomTypeName))
+      .sort((a, b) => a.imRank - b.imRank)[0];
 
     if (!target) {
-      console.log("[STOP] no suitable ranked article");
+      target = list.sort((a, b) => a.imRank - b.imRank)[0];
+    }
+
+    if (!target) {
+      console.log("[STOP] no target article");
       return;
     }
 
@@ -86,12 +92,14 @@ async function fetchAccidentArticles() {
       return;
     }
 
-    const url =
-      `https://m.newspic.kr/view.html?nid=${target.nid}`;
+    const url = `https://m.newspic.kr/view.html?nid=${target.nid}`;
 
     await sendTelegram(
-      `🚨 가장 빠른 실시간 뉴스픽\n\n${target.title}\n\n` +
-      `🏷 ${target.recomTypeName}\n\n` +
+      `🚨 가장 빠른 실시간 뉴스픽\n\n` +
+      `${target.title}\n\n` +
+      (target.recomTypeName
+        ? `🏷 ${target.recomTypeName}\n\n`
+        : ``) +
       `👉 원문 바로가기\n${url}`
     );
 
