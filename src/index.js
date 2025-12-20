@@ -6,9 +6,6 @@ const RSS_URL = "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko";
 
 console.log("[START] newspic telegram bot");
 
-// ✅ 강제 테스트 (이 메시지 안 오면 100% 환경변수 문제)
-await sendTelegram("🧪 텔레그램 강제 테스트 메시지");
-
 async function fetchRSS() {
   const res = await fetch(RSS_URL, { signal: AbortSignal.timeout(10000) });
   return await res.text();
@@ -34,7 +31,10 @@ function parseTitles(xml) {
     }
 
     for (const title of titles.slice(0, 1)) {
-      if (isDuplicate(title)) continue;
+      if (isDuplicate(title)) {
+        console.log("[SKIP DUPLICATE]", title);
+        continue;
+      }
 
       await sendTelegram(`🚨 뉴스픽\n\n${title}`);
       savePosted(title);
