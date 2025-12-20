@@ -1,40 +1,25 @@
-import axios from "axios";
+import fetch from "node-fetch";
 
-const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-export async function sendTelegram(url, title) {
-  const api = `https://api.telegram.org/bot${TOKEN}/sendMessage`;
-
-  const text =
-`가장빠른 실시간 뉴스픽
-🚨 오늘의 핫이슈
-
-${title}
-
-👉 원문 바로가기
-${url}`;
+export async function sendTelegram(text) {
+  const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
 
   try {
-    console.log("📡 텔레그램 전송 정보");
-    console.log("TOKEN 있음:", !!TOKEN);
-    console.log("CHAT_ID:", CHAT_ID);
-
-    const res = await axios.post(api, {
-      chat_id: CHAT_ID,
-      text,
-      disable_web_page_preview: false,
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: CHAT_ID,
+        text,
+        disable_web_page_preview: false
+      }),
+      signal: AbortSignal.timeout(10000)
     });
 
-    console.log("✅ 텔레그램 응답:", res.data);
-  } catch (err) {
-    console.error("❌ 텔레그램 전송 실패");
-    if (err.response) {
-      console.error("상태코드:", err.response.status);
-      console.error("응답:", err.response.data);
-    } else {
-      console.error(err.message);
-    }
-    throw err;
+    console.log("[TELEGRAM] sent");
+  } catch (e) {
+    console.error("[TELEGRAM ERROR]", e.message);
   }
 }
