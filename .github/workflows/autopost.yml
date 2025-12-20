@@ -29,8 +29,12 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run bot
-        run: npm run start
+- name: Run bot
+  run: npm run start
+  env:
+    TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+    TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
 
       - name: Save dedup cache
         uses: actions/cache@v4
