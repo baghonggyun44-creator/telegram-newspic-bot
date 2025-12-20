@@ -6,15 +6,11 @@ import { sendTelegram } from "./telegram.js";
 console.log("[START] newspic telegram bot");
 
 // =====================
-// 설정값
+// 설정
 // =====================
-const FEED_URLS = [
-  "https://m.newspic.kr/",
-  "https://m.newspic.kr/index.html",
-  "https://m.newspic.kr/main.html"
-];
+const RSS_URL =
+  "https://news.google.com/rss/search?q=site:newspic.kr&hl=ko&gl=KR&ceid=KR:ko";
 
-// 최소 차단 (너무 빡세지 않게)
 const ENTERTAINMENT_BLOCK = [
   "결혼","열애","출산","컴백","팬미팅",
   "화보","신곡","콘서트","예능","아이돌"
@@ -24,7 +20,7 @@ const ENTERTAINMENT_BLOCK = [
 // 유틸
 // =====================
 
-// nid 기준 중복 방지 (pn 바뀌어도 동일 기사 차단)
+// nid 기준 중복 제거
 function makeIdFromUrl(url) {
   const m = url.match(/nid=(\d+)/);
   const nid = m ? m[1] : url;
@@ -37,28 +33,27 @@ function isBlockedEntertainment(title) {
 
 async function fetchText(url) {
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-  return { status: res.status, text: await res.text() };
+  return await res.text();
 }
 
-// 뉴스픽 HTML에서 view.html 링크 전부 추출 (등장 순서 유지)
-function extractViewLinks(html) {
-  const regex =
-    /https?:\/\/m\.newspic\.kr\/view\.html\?nid=\d+&pn=\d+/g;
-  return [...new Set(html.match(regex) || [])];
-}
+// RSS 파싱
+function parseRss(xml) {
+  const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
+  return items.map(item => {
+    const block = item[1];
+    const title =
+      block.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/)?.[1] ||
+      block.match(/<title>(.*?)<\/title>/)?.[1] ||
+      "";
 
-// 기사 제목 추출 (OG → title)
-async function getTitleFromView(url) {
-  const { status, text } = await fetchText(url);
-  if (status !== 200) return "";
+    const link =
+      block.match(/<link>(.*?)<\/link>/)?.[1] || "";
 
-  const og = text.match(
-    /property=["']og:title["']\s+content=["']([^"']+)["']/i
-  );
-  if (og?.[1]) return og[1].trim();
-
-  const t = text.match(/<title>(.*?)<\/title>/i);
-  return t?.[1]?.trim() || "";
+    return {
+      title: title.trim(),
+      link: link.trim()
+    };
+  });
 }
 
 // =====================
@@ -66,69 +61,34 @@ async function getTitleFromView(url) {
 // =====================
 (async () => {
   try {
-    // 🧪 1단계: 무조건 텔레그램 오는지 확인
-    await sendTelegram("🧪 [TEST] 뉴스픽 봇 실행 확인 메시지");
+    // RSS 가져오기
+    const rssXml = await fetchText(RSS_URL);
+    const articles = parseRss(rssXml);
 
-    let viewLinks = [];
+    console.log("[DEBUG] rss articles count:", articles.length);
 
-    // 2️⃣ 뉴스픽 메인 HTML 수집
-    for (const feed of FEED_URLS) {
-      console.log("[FETCH FEED]", feed);
-      const { status, text } = await fetchText(feed);
-      console.log("[FETCH STATUS]", status);
+    for (const { title, link } of articles) {
+      if (!link.includes("newspic.kr")) continue;
+      if (!title) continue;
+      if (isBlockedEntertainment(title)) continue;
 
-      if (status !== 200) continue;
+      const id = makeIdFromUrl(link);
+      if (isDuplicate(id)) continue;
 
-      const links = extractViewLinks(text);
-
-      // 🔍 핵심 디버그 로그
-      console.log("[DEBUG] extracted viewLinks count:", links.length);
-      console.log("[DEBUG] sample viewLinks:", links.slice(0, 3));
-
-      if (links.length) {
-        viewLinks = links;
-        break;
-      }
-    }
-
-    if (!viewLinks.length) {
-      console.log("[STOP] no view.html links found in any FEED_URL");
-      return;
-    }
-
-    // 3️⃣ 상단부터 하나씩 검사 → 첫 유효 기사 전송
-    for (const url of viewLinks) {
-      const id = makeIdFromUrl(url);
-      if (isDuplicate(id)) {
-        console.log("[SKIP DUPLICATE]", url);
-        continue;
-      }
-
-      const title = await getTitleFromView(url);
-      if (!title) {
-        console.log("[SKIP] no title:", url);
-        continue;
-      }
-
-      if (isBlockedEntertainment(title)) {
-        console.log("[SKIP ENTERTAINMENT]", title);
-        continue;
-      }
-
-      // ✅ 실제 운영 전송
+      // ✅ 텔레그램 전송
       await sendTelegram(
-        `🔥 가장 빠른 실시간 뉴스픽\n\n${title}\n\n👉 원문 바로가기\n${url}`
+        `🔥 가장 빠른 실시간 뉴스픽\n\n${title}\n\n👉 원문 바로가기\n${link}`
       );
 
       savePosted(id);
-      console.log("[DONE] sent article:", title);
+      console.log("[DONE] sent:", title);
       return;
     }
 
-    console.log("[STOP] all top articles were duplicates or blocked");
+    console.log("[STOP] no suitable article found");
 
   } catch (e) {
-    console.error("[FATAL ERROR]", e);
+    console.error("[FATAL ERROR]", e.message);
     process.exit(1);
   }
 })();
