@@ -1,30 +1,39 @@
-name: NewsPic Telegram AutoPost
+name: Telegram NewsPic AutoPost
 
 on:
   schedule:
-    # ⏰ 30분마다 실행 (UTC 기준)
     - cron: "*/30 * * * *"
   workflow_dispatch:
 
 jobs:
-  autopost:
+  run:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 저장소 체크아웃
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🟢 Node.js 설정
+      - name: Restore dedup cache
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: newspic-dedup-${{ github.run_id }}
+          restore-keys: |
+            newspic-dedup-
+
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: 📦 의존성 설치
+      - name: Install dependencies
         run: npm install
 
-      - name: 🚀 뉴스픽 자동 업로드 실행
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          NEWSPIC_PARTNER_CODE: ${{ secrets.NEWSPIC_PARTNER_CODE }}
+      - name: Run bot
         run: npm run start
+
+      - name: Save dedup cache
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: newspic-dedup-${{ github.run_id }}
