@@ -1,41 +1,30 @@
+// src/dedupStore.js
 import fs from "fs";
 
-const FILE = "data/posted.json";
-const EXPIRE_HOURS = 24;
+const STORE_PATH = "./posted.json";
 
-function load() {
-  if (!fs.existsSync(FILE)) return {};
-  return JSON.parse(fs.readFileSync(FILE, "utf8"));
+function loadStore() {
+  if (!fs.existsSync(STORE_PATH)) {
+    fs.writeFileSync(STORE_PATH, JSON.stringify([]));
+  }
+  return JSON.parse(fs.readFileSync(STORE_PATH, "utf-8"));
 }
 
-function save(data) {
-  fs.mkdirSync("data", { recursive: true });
-  fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+function saveStore(data) {
+  fs.writeFileSync(STORE_PATH, JSON.stringify(data, null, 2));
 }
 
-function normalizeTitle(title) {
-  return title
-    .toLowerCase()
-    .replace(/[^\w\s]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+// ✅ 중복 여부 확인
+export function isDuplicate(id) {
+  const store = loadStore();
+  return store.includes(id);
 }
 
-export function isDuplicateByTitle(title) {
-  const db = load();
-  const key = normalizeTitle(title);
-
-  if (!db[key]) return false;
-
-  const diff =
-    (Date.now() - db[key]) / (1000 * 60 * 60);
-
-  return diff < EXPIRE_HOURS;
-}
-
-export function saveTitle(title) {
-  const db = load();
-  const key = normalizeTitle(title);
-  db[key] = Date.now();
-  save(db);
+// ✅ 게시 완료 저장
+export function savePosted(id) {
+  const store = loadStore();
+  if (!store.includes(id)) {
+    store.push(id);
+    saveStore(store);
+  }
 }
