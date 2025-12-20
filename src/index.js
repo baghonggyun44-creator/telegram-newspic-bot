@@ -1,3 +1,7 @@
+import { sendTelegram } from "./telegram.js";
+
+await sendTelegram("🧪 텔레그램 강제 테스트 메시지");
+
 import fetch from "node-fetch";
 import { isDuplicate, savePosted } from "./dedupStore.js";
 import { sendTelegram } from "./telegram.js";
