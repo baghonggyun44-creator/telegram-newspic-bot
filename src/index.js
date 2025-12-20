@@ -11,13 +11,13 @@ console.log("[START] newspic telegram bot");
 const RSS_URL =
   "https://news.google.com/rss/search?q=site:newspic.kr&hl=ko&gl=KR&ceid=KR:ko";
 
-// 최소 차단 (너무 빡세지 않게)
+// 연예/홍보 최소 차단
 const ENTERTAINMENT_BLOCK = [
   "결혼","열애","출산","컴백","팬미팅",
   "화보","신곡","콘서트","예능","아이돌"
 ];
 
-// Google / 뉴스픽 접근용 헤더 (필수)
+// 헤더 (Google / newspic 봇 차단 회피)
 const HEADERS = {
   "user-agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -30,7 +30,7 @@ const HEADERS = {
 // 유틸
 // =====================
 
-// nid 기준 중복 제거 (pn 바뀌어도 동일 기사 차단)
+// nid 기준 중복 제거 (pn 바뀌어도 동일 기사)
 function makeIdFromUrl(url) {
   const m = url.match(/nid=(\d+)/);
   const nid = m ? m[1] : url;
@@ -56,15 +56,13 @@ function parseRss(xml) {
       block.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/)?.[1] ||
       block.match(/<title>(.*?)<\/title>/)?.[1] ||
       "";
-
     const link =
       block.match(/<link>(.*?)<\/link>/)?.[1] || "";
-
     return { title: title.trim(), link: link.trim() };
   });
 }
 
-// 🔥 Google News → newspic 최종 링크 수동 추적
+// 🔥 Google News → newspic 최종 URL 수동 추적
 async function resolveFinalNewspicUrl(startUrl) {
   let current = startUrl;
 
@@ -82,7 +80,7 @@ async function resolveFinalNewspicUrl(startUrl) {
         ? location
         : new URL(location, current).href;
 
-      // 🎯 진짜 뉴스픽 기사 도착
+      // 🎯 진짜 뉴스픽 기사
       if (
         current.includes("newspic.kr/view.html") ||
         current.includes("m.newspic.kr/view.html")
@@ -90,12 +88,12 @@ async function resolveFinalNewspicUrl(startUrl) {
         return current;
       }
 
-      // 로그인/파트너스 페이지면 실패 처리
+      // 로그인/파트너스 페이지면 중단
       if (current.includes("/login")) {
         return "";
       }
     }
-  } catch (e) {
+  } catch {
     return "";
   }
 
@@ -116,37 +114,35 @@ async function resolveFinalNewspicUrl(startUrl) {
 
     for (const { title, link } of articles) {
       if (!title || !link) continue;
+
+      // ✅ fallback을 무조건 하나 확보 (첫 기사)
+      if (!fallback) {
+        fallback = { title, finalUrl: link };
+      }
+
       if (isBlockedEntertainment(title)) continue;
 
-      // 🔥 중간 링크 → 최종 newspic 링크
+      // 🔥 중간 링크 → newspic 최종 링크
       const finalUrl = await resolveFinalNewspicUrl(link);
       if (!finalUrl) continue;
 
       const id = makeIdFromUrl(finalUrl);
       if (isDuplicate(id)) continue;
 
-      // fallback 후보 저장
-      if (!fallback) {
-        fallback = { title, finalUrl, id };
-      }
-
-      // 정상 기사 전송
       await sendTelegram(
         `🔥 가장 빠른 실시간 뉴스픽\n\n${title}\n\n👉 원문 바로가기\n${finalUrl}`
       );
 
       savePosted(id);
-      console.log("[DONE] sent:", title);
+      console.log("[DONE] sent (newspic):", title);
       return;
     }
 
-    // 🔁 조건 통과 기사 없으면 fallback 1건
+    // 🔁 newspic 링크 하나도 못 잡았을 경우 → fallback 1건 전송
     if (fallback) {
       await sendTelegram(
         `📰 가장 빠른 실시간 뉴스픽\n\n${fallback.title}\n\n👉 원문 바로가기\n${fallback.finalUrl}`
       );
-
-      savePosted(fallback.id);
       console.log("[DONE] sent (fallback):", fallback.title);
       return;
     }
