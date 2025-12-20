@@ -5,7 +5,7 @@ import { sendTelegram } from "./telegram.js";
 
 console.log("[START] newspic accident API bot");
 
-// 🔐 GitHub Secret
+// 🔐 GitHub Actions env
 const COOKIE = process.env.NEWSPIC_COOKIE;
 if (!COOKIE) {
   console.error("[FATAL] NEWSPIC_COOKIE is missing");
@@ -15,7 +15,7 @@ if (!COOKIE) {
 // 사건사고 채널 번호 (확정)
 const CHANNEL_NO = 12;
 
-// 우선순위 뱃지
+// 허용 뱃지
 const ALLOWED_RECOM_TYPES = [
   "열독률",
   "핫클릭",
@@ -23,7 +23,7 @@ const ALLOWED_RECOM_TYPES = [
   "공유많은"
 ];
 
-// 중복 방지 (nid 기준)
+// nid 기준 중복 방지
 function makeId(nid) {
   return crypto.createHash("md5").update(String(nid)).digest("hex");
 }
@@ -48,7 +48,7 @@ async function fetchAccidentArticles() {
 
   const text = await res.text();
 
-  // ❗ 로그인 풀리면 HTML이 떨어짐 → 바로 차단
+  // 로그인 풀리면 HTML이 내려옴 → 즉시 차단
   if (text.startsWith("<!DOCTYPE")) {
     throw new Error("Not logged in (HTML response)");
   }
@@ -68,7 +68,7 @@ async function fetchAccidentArticles() {
       return;
     }
 
-    // 1️⃣ 사건사고 + 우선순위 뱃지 + 1순위
+    // 사건사고 + 1순위 + 우선 뱃지
     const target = list.find(
       a =>
         a.imRank === 1 &&
@@ -86,13 +86,13 @@ async function fetchAccidentArticles() {
       return;
     }
 
-    const newspicUrl =
+    const url =
       `https://m.newspic.kr/view.html?nid=${target.nid}`;
 
     await sendTelegram(
       `🚨 가장 빠른 실시간 뉴스픽\n\n${target.title}\n\n` +
       `🏷 ${target.recomTypeName}\n\n` +
-      `👉 원문 바로가기\n${newspicUrl}`
+      `👉 원문 바로가기\n${url}`
     );
 
     savePosted(id);
