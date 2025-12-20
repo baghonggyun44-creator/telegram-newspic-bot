@@ -3,15 +3,11 @@ name: Telegram NewsPic AutoPost
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "*/10 * * * *"   # 10분마다 (원하면 나중에 변경)
 
 jobs:
   run:
     runs-on: ubuntu-latest
-
-    env:
-      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
     steps:
       - name: Checkout repository
@@ -27,3 +23,5 @@ jobs:
 
       - name: Run bot
         run: npm run start
+        env:
+          NEWSPIC_COOKIE: ${{ secrets.NEWSPIC_COOKIE }}
