@@ -1,8 +1,9 @@
 import fetch from "node-fetch";
-import cheerio from "cheerio";
 import crypto from "crypto";
+import { load } from "cheerio";
 import { isDuplicate, savePosted } from "./dedupStore.js";
 import { sendTelegram } from "./telegram.js";
+
 
 console.log("[START] newspic accident html bot");
 
