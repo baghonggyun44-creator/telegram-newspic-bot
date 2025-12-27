@@ -16,7 +16,8 @@ if (!COOKIE) {
   process.exit(1);
 }
 
-const ONE_HOUR = 60 * 60 * 1000;
+// ⏱ 테스트용: 5분
+const ONE_HOUR = 5 * 60 * 1000;
 
 // 📌 카테고리 우선순위
 const CHANNEL_PRIORITY = [
