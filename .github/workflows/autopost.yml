@@ -3,7 +3,7 @@ name: Telegram NewsPic AutoPost
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/10 * * * *"   # 10분마다 실행 (원하면 조정)
+    - cron: "*/10 * * * *"
 
 jobs:
   run:
@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -27,3 +29,17 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           NEWSPIC_COOKIE: ${{ secrets.NEWSPIC_COOKIE }}
+
+      # ✅ 상태 저장 커밋
+      - name: Commit posted.json
+        run: |
+          git config user.name "newsbot"
+          git config user.email "newsbot@users.noreply.github.com"
+
+          if git status --porcelain | grep posted.json; then
+            git add posted.json
+            git commit -m "chore: update posted.json"
+            git push
+          else
+            echo "No changes to commit"
+          fi
