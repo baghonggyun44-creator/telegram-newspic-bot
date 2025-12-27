@@ -6,20 +6,19 @@ import {
   canPostNow
 } from "./dedupStore.js";
 import { sendTelegram } from "./telegram.js";
+import { makePartnerLink } from "./partnerLink.js";
 
 console.log("[START] NewsPic AutoPost Bot");
 
-// 🔐 환경변수
 const COOKIE = process.env.NEWSPIC_COOKIE;
 if (!COOKIE) {
   console.error("[FATAL] NEWSPIC_COOKIE is missing");
   process.exit(1);
 }
 
-// ⏱ 1시간 제한
 const ONE_HOUR = 60 * 60 * 1000;
 
-// 📌 카테고리 탐색 우선순위
+// 📌 카테고리 우선순위
 const CHANNEL_PRIORITY = [
   { no: 12, name: "사건사고" },
   { no: 3,  name: "정치" },
@@ -35,12 +34,10 @@ const ALLOWED_RECOM_TYPES = [
   "공유많은"
 ];
 
-// nid → 고유 ID
 function makeId(nid) {
   return crypto.createHash("md5").update(String(nid)).digest("hex");
 }
 
-// 기사 목록 호출
 async function fetchArticles(channelNo) {
   const res = await fetch(
     "https://partners.newspic.kr/main/contentList",
@@ -85,7 +82,6 @@ async function fetchArticles(channelNo) {
       const list = await fetchArticles(channel.no);
       if (list.length === 0) continue;
 
-      // 🔥 우선순위 정렬
       const sorted = list
         .sort((a, b) => a.imRank - b.imRank)
         .sort((a, b) => {
@@ -94,7 +90,6 @@ async function fetchArticles(channelNo) {
           return bOk - aOk;
         });
 
-      // ✅ 중복 아닌 첫 기사 선택
       for (const article of sorted) {
         const id = makeId(article.nid);
         if (!isDuplicate(id)) {
@@ -107,14 +102,27 @@ async function fetchArticles(channelNo) {
       if (target) break;
     }
 
-    // ❌ 전 카테고리 실패 → 무음 종료
     if (!target) {
       console.log("[STOP] no new articles in all categories");
       return;
     }
 
-    const id = makeId(target.nid);
-    const url = `https://m.newspic.kr/view.html?nid=${target.nid}`;
+    // 🔗 원본 기사 URL
+    const rawUrl = `https://m.newspic.kr/view.html?nid=${target.nid}`;
+
+    // 💰 파트너 수익 링크 생성
+    let partnerUrl;
+    try {
+      partnerUrl = await makePartnerLink(rawUrl);
+    } catch (e) {
+      console.error("[STOP] partner link generation failed");
+      return;
+    }
+
+    if (!partnerUrl || typeof partnerUrl !== "string") {
+      console.log("[STOP] invalid partner link");
+      return;
+    }
 
     await sendTelegram(
       `🚨 실시간 뉴스픽 (${usedCategory})\n\n` +
@@ -122,11 +130,11 @@ async function fetchArticles(channelNo) {
       (target.recomTypeName
         ? `🏷 ${target.recomTypeName}\n\n`
         : ``) +
-      `👉 원문 바로가기\n${url}`
+      `👉 원문 바로가기\n${partnerUrl}`
     );
 
-    savePosted(id);
-    console.log("[DONE] sent:", target.title);
+    savePosted(makeId(target.nid));
+    console.log("[DONE] sent (partner link):", target.title);
 
   } catch (e) {
     console.error("[FATAL ERROR]", e.message);
