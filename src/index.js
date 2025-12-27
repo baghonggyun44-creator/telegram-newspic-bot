@@ -167,12 +167,29 @@ function makeHashtags(title, baseTags) {
       `https://twitter.com/intent/tweet?text=` +
       encodeURIComponent(xText);
 
+    const facebookIntentUrl =
+      `https://www.facebook.com/sharer/sharer.php?u=` +
+      encodeURIComponent(partnerUrl);
+    
+    const threadsText =
+      `${target.title}\n\n${partnerUrl}\n\n${hashtags}`;
+    
+    const threadsIntentUrl =
+      `https://www.threads.net/intent/post?text=` +
+      encodeURIComponent(xText);
+
+
+    
     const privateMessage =
-      `🐦 X 업로드 알림\n\n` +
-      `아래 문구 복사 또는 링크를 눌러 바로 게시하세요.\n\n` +
+      `📢 SNS 업로드 알림 (반자동)\n\n` +
+      `아래 문구는 그대로 사용해도 됩니다.\n\n` +
       `────────────\n` +
       `${xText}\n\n` +
+      `🔗 Facebook 바로쓰기\n${facebookIntentUrl}\n\n` +
+      `🔗 Threads 바로쓰기\n${threadsIntentUrl}\n\n` +
       `🔗 X 바로쓰기\n${xIntentUrl}`;
+
+    
 
     // 전송
     await sendTelegram(publicMessage, PUBLIC_CHAT);
