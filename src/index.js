@@ -10,24 +10,27 @@ import { makePartnerLink } from "./partnerLink.js";
 
 console.log("[START] NewsPic AutoPost Bot");
 
+// 환경변수
 const COOKIE = process.env.NEWSPIC_COOKIE;
-if (!COOKIE) {
-  console.error("[FATAL] NEWSPIC_COOKIE is missing");
+const PUBLIC_CHAT = process.env.TELEGRAM_CHAT_ID_PUBLIC;
+const PRIVATE_CHAT = process.env.TELEGRAM_CHAT_ID_PRIVATE;
+
+if (!COOKIE || !PUBLIC_CHAT || !PRIVATE_CHAT) {
+  console.error("[FATAL] required env missing");
   process.exit(1);
 }
 
-// ⏱ 테스트용: 5분
-const ONE_HOUR = 5 * 60 * 1000;
+// ⏱ 전송 간격 (현재 5분 테스트)
+const INTERVAL = 5 * 60 * 1000;
 
-// 📌 카테고리 우선순위
+// 카테고리 우선순위
 const CHANNEL_PRIORITY = [
-  { no: 12, name: "사건사고" },
-  { no: 3,  name: "정치" },
-  { no: 4,  name: "경제" },
-  { no: 1,  name: "사회" }
+  { no: 12, name: "사건사고", tags: ["#사건사고", "#속보"] },
+  { no: 3,  name: "정치",     tags: ["#정치", "#국회"] },
+  { no: 4,  name: "경제",     tags: ["#경제", "#증시"] },
+  { no: 1,  name: "사회",     tags: ["#사회", "#뉴스"] }
 ];
 
-// 🏷 우선 고려 뱃지
 const ALLOWED_RECOM_TYPES = [
   "열독률",
   "핫클릭",
@@ -35,10 +38,12 @@ const ALLOWED_RECOM_TYPES = [
   "공유많은"
 ];
 
+// 🔑 ID 생성
 function makeId(nid) {
   return crypto.createHash("md5").update(String(nid)).digest("hex");
 }
 
+// 🔎 기사 목록 조회
 async function fetchArticles(channelNo) {
   const res = await fetch(
     "https://partners.newspic.kr/main/contentList",
@@ -46,8 +51,7 @@ async function fetchArticles(channelNo) {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "User-Agent": "Mozilla/5.0",
         "Cookie": COOKIE
       },
       body: new URLSearchParams({
@@ -65,21 +69,47 @@ async function fetchArticles(channelNo) {
   return JSON.parse(text)?.recomList || [];
 }
 
+// 🧠 X 클릭 최적 문구 생성
+function makeXHook(title) {
+  if (title.includes("사망") || title.includes("숨져")) {
+    return `🚨 방금 전 확인된 내용`;
+  }
+  if (title.includes("논란") || title.includes("충격")) {
+    return `지금 가장 논란되는 이슈`;
+  }
+  if (title.includes("결국")) {
+    return `결국 이런 결과가 나왔습니다`;
+  }
+  return `지금 가장 많이 보는 뉴스`;
+}
+
+// 🏷 해시태그 자동 생성
+function makeHashtags(title, categoryTags) {
+  const keywords = [];
+
+  if (title.match(/대통령|국회|정부/)) keywords.push("#정치이슈");
+  if (title.match(/경찰|검찰|구속|체포/)) keywords.push("#사건");
+  if (title.match(/주식|증시|코스피|코인/)) keywords.push("#재테크");
+  if (title.match(/사망|사고|화재/)) keywords.push("#속보");
+
+  const all = [...categoryTags, ...keywords];
+  return [...new Set(all)].slice(0, 3).join(" ");
+}
+
 (async () => {
   try {
-    // ⛔ 1시간 제한
-    if (!canPostNow(ONE_HOUR)) {
-      console.log("[STOP] posted within last hour");
+    // ⛔ 시간 제한
+    if (!canPostNow(INTERVAL)) {
+      console.log("[STOP] interval not passed");
       return;
     }
 
     let target = null;
     let usedCategory = null;
+    let categoryTags = [];
 
-    // 🔁 카테고리 순차 탐색
+    // 카테고리 순회
     for (const channel of CHANNEL_PRIORITY) {
-      console.log(`[TRY] ${channel.name}`);
-
       const list = await fetchArticles(channel.no);
       if (list.length === 0) continue;
 
@@ -96,6 +126,7 @@ async function fetchArticles(channelNo) {
         if (!isDuplicate(id)) {
           target = article;
           usedCategory = channel.name;
+          categoryTags = channel.tags;
           break;
         }
       }
@@ -104,41 +135,53 @@ async function fetchArticles(channelNo) {
     }
 
     if (!target) {
-      console.log("[STOP] no new articles in all categories");
+      console.log("[STOP] no new article");
       return;
     }
 
-    // 🔗 원본 기사 URL
+    // 파트너 링크 생성
     const rawUrl = `https://m.newspic.kr/view.html?nid=${target.nid}`;
-
-    // 💰 파트너 수익 링크 생성
-    let partnerUrl;
-    try {
-      partnerUrl = await makePartnerLink(rawUrl);
-    } catch (e) {
-      console.error("[STOP] partner link generation failed");
+    const partnerUrl = await makePartnerLink(rawUrl);
+    if (!partnerUrl) {
+      console.log("[STOP] partner link failed");
       return;
     }
 
-    if (!partnerUrl || typeof partnerUrl !== "string") {
-      console.log("[STOP] invalid partner link");
-      return;
-    }
-
-    await sendTelegram(
+    // 🔹 공개 채널 (독자용)
+    const publicMessage =
       `🚨 실시간 뉴스픽 (${usedCategory})\n\n` +
       `${target.title}\n\n` +
-      (target.recomTypeName
-        ? `🏷 ${target.recomTypeName}\n\n`
-        : ``) +
-      `👉 원문 바로가기\n${partnerUrl}`
-    );
+      `👉 바로보기\n${partnerUrl}`;
+
+    // 🔹 X 반자동용 (주인님만)
+    const hook = makeXHook(target.title);
+    const hashtags = makeHashtags(target.title, categoryTags);
+
+    const xText =
+      `${hook}\n` +
+      `${target.title}\n\n` +
+      `${partnerUrl}\n\n` +
+      `${hashtags}`;
+
+    const xIntentUrl =
+      `https://twitter.com/intent/tweet?text=` +
+      encodeURIComponent(xText);
+
+    const privateMessage =
+      `🐦 X 업로드 알림\n\n` +
+      `아래 문구 복사하거나 링크를 눌러 바로 게시하세요.\n\n` +
+      `────────────\n` +
+      `${xText}\n\n` +
+      `🔗 X 바로쓰기\n${xIntentUrl}`;
+
+    // 전송
+    await sendTelegram(publicMessage, PUBLIC_CHAT);
+    await sendTelegram(privateMessage, PRIVATE_CHAT);
 
     savePosted(makeId(target.nid));
-    console.log("[DONE] sent (partner link):", target.title);
+    console.log("[DONE] sent public + private");
 
   } catch (e) {
-    console.error("[FATAL ERROR]", e.message);
-    process.exit(1);
+    console.error("[ERROR]", e.message);
   }
 })();
