@@ -95,6 +95,24 @@ function makeHashtags(title, baseTags) {
   return [...new Set([...baseTags, ...extra])].slice(0, 3).join(" ");
 }
 
+// 📘 Facebook 클릭 유도 1줄 생성기
+function makeFacebookHook(title) {
+  if (title.includes("사망") || title.includes("숨져")) {
+    return "방금 전 확인된 충격적인 소식입니다.";
+  }
+  if (title.includes("논란") || title.includes("충격")) {
+    return "지금 페이스북에서 가장 말 많은 이슈입니다.";
+  }
+  if (title.includes("결국")) {
+    return "결국 이런 결론이 나왔습니다.";
+  }
+  if (title.includes("폭로") || title.includes("드러나")) {
+    return "지금 확인하지 않으면 놓칠 수 있습니다.";
+  }
+  return "지금 가장 많이 공유되고 있는 뉴스입니다.";
+}
+
+
 (async () => {
   try {
     // ⛔ 전송 간격 제한
@@ -167,16 +185,29 @@ function makeHashtags(title, baseTags) {
       `https://twitter.com/intent/tweet?text=` +
       encodeURIComponent(xText);
 
+     // 📘 Facebook 전용 문구 생성
+    const fbHook = makeFacebookHook(target.title);
+
+    const facebookText =
+      `${fbHook}\n\n` +
+      `${target.title}\n\n` +
+      `👉 자세히 보기\n` +
+      `${partnerUrl}`;    
+    
+    
     const facebookIntentUrl =
-      `https://www.facebook.com/sharer/sharer.php?u=` +
+      `https://www.facebook.com/sharer/sharer.php?quote=` +
+      encodeURIComponent(facebookText) +
+      `&u=` +
       encodeURIComponent(partnerUrl);
+
     
     const threadsText =
       `${target.title}\n\n${partnerUrl}\n\n${hashtags}`;
     
     const threadsIntentUrl =
       `https://www.threads.net/intent/post?text=` +
-      encodeURIComponent(xText);
+      encodeURIComponent(threadsText);
 
 
     
@@ -188,6 +219,8 @@ function makeHashtags(title, baseTags) {
       `🔗 Facebook 바로쓰기\n${facebookIntentUrl}\n\n` +
       `🔗 Threads 바로쓰기\n${threadsIntentUrl}\n\n` +
       `🔗 X 바로쓰기\n${xIntentUrl}`;
+
+   
 
     
 
