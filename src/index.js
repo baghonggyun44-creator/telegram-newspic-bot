@@ -10,20 +10,20 @@ import { makePartnerLink } from "./partnerLink.js";
 
 console.log("[START] NewsPic AutoPost Bot");
 
-// 환경변수
+// ✅ GitHub Secrets 이름에 맞춤
 const COOKIE = process.env.NEWSPIC_COOKIE;
-const PUBLIC_CHAT = process.env.TELEGRAM_CHAT_ID_PUBLIC;
-const PRIVATE_CHAT = process.env.TELEGRAM_CHAT_ID_PRIVATE;
+const PUBLIC_CHAT = process.env.TELEGRAM_CHAT_ID;          // 공개 채널
+const PRIVATE_CHAT = process.env.TELEGRAM_CHAT_ID_PRIVATE; // 개인 DM
 
 if (!COOKIE || !PUBLIC_CHAT || !PRIVATE_CHAT) {
   console.error("[FATAL] required env missing");
   process.exit(1);
 }
 
-// ⏱ 전송 간격 (현재 5분 테스트)
+// ⏱ 전송 간격 (현재 5분 테스트용)
 const INTERVAL = 5 * 60 * 1000;
 
-// 카테고리 우선순위
+// 카테고리 우선순위 + 기본 해시태그
 const CHANNEL_PRIORITY = [
   { no: 12, name: "사건사고", tags: ["#사건사고", "#속보"] },
   { no: 3,  name: "정치",     tags: ["#정치", "#국회"] },
@@ -38,12 +38,12 @@ const ALLOWED_RECOM_TYPES = [
   "공유많은"
 ];
 
-// 🔑 ID 생성
+// 🔑 기사 ID 생성
 function makeId(nid) {
   return crypto.createHash("md5").update(String(nid)).digest("hex");
 }
 
-// 🔎 기사 목록 조회
+// 🔎 기사 목록 호출
 async function fetchArticles(channelNo) {
   const res = await fetch(
     "https://partners.newspic.kr/main/contentList",
@@ -69,36 +69,35 @@ async function fetchArticles(channelNo) {
   return JSON.parse(text)?.recomList || [];
 }
 
-// 🧠 X 클릭 최적 문구 생성
+// 🧠 X 클릭 유도용 후킹 문구
 function makeXHook(title) {
   if (title.includes("사망") || title.includes("숨져")) {
-    return `🚨 방금 전 확인된 내용`;
+    return "🚨 방금 확인된 충격적인 소식";
   }
   if (title.includes("논란") || title.includes("충격")) {
-    return `지금 가장 논란되는 이슈`;
+    return "지금 가장 뜨거운 논란";
   }
   if (title.includes("결국")) {
-    return `결국 이런 결과가 나왔습니다`;
+    return "결국 이런 결론이 나왔습니다";
   }
-  return `지금 가장 많이 보는 뉴스`;
+  return "지금 가장 많이 보는 뉴스";
 }
 
-// 🏷 해시태그 자동 생성
-function makeHashtags(title, categoryTags) {
-  const keywords = [];
+// 🏷 해시태그 자동 생성 (최대 3개)
+function makeHashtags(title, baseTags) {
+  const extra = [];
 
-  if (title.match(/대통령|국회|정부/)) keywords.push("#정치이슈");
-  if (title.match(/경찰|검찰|구속|체포/)) keywords.push("#사건");
-  if (title.match(/주식|증시|코스피|코인/)) keywords.push("#재테크");
-  if (title.match(/사망|사고|화재/)) keywords.push("#속보");
+  if (title.match(/경찰|검찰|체포|구속/)) extra.push("#사건");
+  if (title.match(/사망|사고|화재/)) extra.push("#긴급");
+  if (title.match(/주식|증시|코스피|코인/)) extra.push("#재테크");
+  if (title.match(/대통령|국회|정부/)) extra.push("#정치이슈");
 
-  const all = [...categoryTags, ...keywords];
-  return [...new Set(all)].slice(0, 3).join(" ");
+  return [...new Set([...baseTags, ...extra])].slice(0, 3).join(" ");
 }
 
 (async () => {
   try {
-    // ⛔ 시간 제한
+    // ⛔ 전송 간격 제한
     if (!canPostNow(INTERVAL)) {
       console.log("[STOP] interval not passed");
       return;
@@ -108,7 +107,7 @@ function makeHashtags(title, categoryTags) {
     let usedCategory = null;
     let categoryTags = [];
 
-    // 카테고리 순회
+    // 카테고리 순차 탐색
     for (const channel of CHANNEL_PRIORITY) {
       const list = await fetchArticles(channel.no);
       if (list.length === 0) continue;
@@ -139,21 +138,22 @@ function makeHashtags(title, categoryTags) {
       return;
     }
 
-    // 파트너 링크 생성
+    // 🔗 파트너 수익 링크 생성
     const rawUrl = `https://m.newspic.kr/view.html?nid=${target.nid}`;
     const partnerUrl = await makePartnerLink(rawUrl);
+
     if (!partnerUrl) {
       console.log("[STOP] partner link failed");
       return;
     }
 
-    // 🔹 공개 채널 (독자용)
+    // 📢 공개 채널 메시지 (독자용)
     const publicMessage =
       `🚨 실시간 뉴스픽 (${usedCategory})\n\n` +
       `${target.title}\n\n` +
       `👉 바로보기\n${partnerUrl}`;
 
-    // 🔹 X 반자동용 (주인님만)
+    // 🐦 개인 DM – X 반자동 업로드용
     const hook = makeXHook(target.title);
     const hashtags = makeHashtags(target.title, categoryTags);
 
@@ -169,7 +169,7 @@ function makeHashtags(title, categoryTags) {
 
     const privateMessage =
       `🐦 X 업로드 알림\n\n` +
-      `아래 문구 복사하거나 링크를 눌러 바로 게시하세요.\n\n` +
+      `아래 문구 복사 또는 링크를 눌러 바로 게시하세요.\n\n` +
       `────────────\n` +
       `${xText}\n\n` +
       `🔗 X 바로쓰기\n${xIntentUrl}`;
