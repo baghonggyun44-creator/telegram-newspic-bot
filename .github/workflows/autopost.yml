@@ -12,8 +12,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          persist-credentials: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -26,9 +24,11 @@ jobs:
       - name: Run bot
         run: npm run start
         env:
+          NEWSPIC_COOKIE: ${{ secrets.NEWSPIC_COOKIE }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          NEWSPIC_COOKIE: ${{ secrets.NEWSPIC_COOKIE }}
+          TELEGRAM_CHAT_ID_PRIVATE: ${{ secrets.TELEGRAM_CHAT_ID_PRIVATE }}
+
 
       # ✅ 상태 저장 커밋
       - name: Commit posted.json
